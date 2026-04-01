@@ -1,28 +1,27 @@
 module.exports = {
   run: [
-    // Install PyTorch with CUDA support first
-    {
-      method: "script.start",
-      params: {
-        uri: "torch.js",
-        params: {
-          venv: "env",
-          xformers: false   // VoxCPM doesn't require xformers
-        }
-      }
-    },
     // Install VoxCPM dependencies from requirements.txt
     {
       method: "shell.run",
       params: {
         venv: "env",
         message: [
-          "pip install -r requirements.txt"
+          "uv pip install -r requirements.txt"
         ],
       }
     },
+    // Install PyTorch with CUDA support
+    {
+      method: "script.start",
+      params: {
+        uri: "torch.js",
+        params: {
+          venv: "env",
+          // xformers: true   // VoxCPM doesn't require xformers
+        }
+      }
+    },
     // Pre-download VoxCPM1.5 model
-    // Using && dir to ensure clean prompt termination
     {
       method: "shell.run",
       params: {

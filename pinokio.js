@@ -1,6 +1,6 @@
 const path = require('path')
 module.exports = {
-  version: "1.0.0",
+  version: "5.0",
   title: "VoxCPM-1.5",
   description: "🎙️ Tokenizer-Free TTS for Context-Aware Speech Generation and True-to-Life Voice Cloning. Features 44.1kHz sampling rate, 6.25Hz token rate, and supports both SFT and LoRA fine-tuning. Built on MiniCPM-4 backbone for highly expressive, natural speech synthesis.",
   icon: "icon.jpg",
