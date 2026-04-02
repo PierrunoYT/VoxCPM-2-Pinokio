@@ -40,15 +40,17 @@ def generate_speech(
         return None, "⚠️ Please enter some text to synthesize."
     
     try:
-        # Prepare prompt audio path
-        prompt_wav_path = None
-        if prompt_audio is not None:
-            prompt_wav_path = prompt_audio
+        # Prepare prompt audio path and text (must both be provided or both be None)
+        prompt_wav_path = prompt_audio if prompt_audio is not None else None
+        prompt_text_input = prompt_text.strip() if prompt_text and prompt_text.strip() else None
         
-        # Prepare prompt text
-        prompt_text_input = None
-        if prompt_text and prompt_text.strip() != "":
-            prompt_text_input = prompt_text
+        # If only one is provided, drop both and warn
+        if (prompt_wav_path is None) != (prompt_text_input is None):
+            if prompt_wav_path and not prompt_text_input:
+                return None, "⚠️ Please provide the reference text (transcript of your reference audio) for voice cloning."
+            else:
+                prompt_wav_path = None
+                prompt_text_input = None
         
         status_msg = "🎙️ Generating speech..."
         
@@ -98,15 +100,17 @@ def generate_streaming_speech(
         return None, "⚠️ Please enter some text to synthesize."
     
     try:
-        # Prepare prompt audio path
-        prompt_wav_path = None
-        if prompt_audio is not None:
-            prompt_wav_path = prompt_audio
+        # Prepare prompt audio path and text (must both be provided or both be None)
+        prompt_wav_path = prompt_audio if prompt_audio is not None else None
+        prompt_text_input = prompt_text.strip() if prompt_text and prompt_text.strip() else None
         
-        # Prepare prompt text
-        prompt_text_input = None
-        if prompt_text and prompt_text.strip() != "":
-            prompt_text_input = prompt_text
+        # If only one is provided, drop both and warn
+        if (prompt_wav_path is None) != (prompt_text_input is None):
+            if prompt_wav_path and not prompt_text_input:
+                return None, "⚠️ Please provide the reference text (transcript of your reference audio) for voice cloning."
+            else:
+                prompt_wav_path = None
+                prompt_text_input = None
         
         status_msg = "🎙️ Generating speech (streaming mode)..."
         
@@ -220,10 +224,10 @@ with gr.Blocks(
                     )
                     
                     prompt_text_input = gr.Textbox(
-                        label="Reference Text (Optional)",
+                        label="Reference Text (Required for Voice Cloning)",
                         placeholder="Transcript of the reference audio...",
                         lines=3,
-                        info="Provide the transcript of the reference audio for better results",
+                        info="You must provide the transcript of the reference audio for voice cloning to work",
                         max_lines=8,
                         show_copy_button=True
                     )
