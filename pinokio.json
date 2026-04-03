@@ -1,0 +1,5 @@
+{
+  "title": "VoxCPM-1.5",
+  "description": "Tokenizer-free TTS for context-aware speech and voice cloning (Gradio UI).",
+  "icon": "icon.jpg"
+}

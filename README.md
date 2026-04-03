@@ -22,8 +22,10 @@ A comprehensive Gradio web interface for **VoxCPM 1.5** - an innovative tokenize
 
 ### 1. Install Dependencies
 
+From the repository root:
+
 ```bash
-pip install -r requirements.txt
+pip install -r app/requirements.txt
 ```
 
 Or install individually:
@@ -46,10 +48,21 @@ snapshot_download("openbmb/VoxCPM1.5")
 ### Starting the Application
 
 ```bash
+cd app
 python app.py
 ```
 
 The interface will launch at `http://127.0.0.1:7860` (or another available port).
+
+### Pinokio
+
+This repository includes Pinokio launcher scripts in the project root (`install.js`, `start.js`, `update.js`, `reset.js`, `pinokio.js`, `link.js`, `torch.js`). App code lives under `app/`. Use **Install** then **Start** in Pinokio; the Web UI URL is captured automatically when Gradio prints the local URL.
+
+**Verification:** After a successful install, run **Start** and confirm the sidebar shows **Open Web UI** once the terminal prints the Gradio URL. If the tab does not appear, check launcher logs under `logs/api/` (or `pinokio/logs/api/` if your project uses a `pinokio/` folder). From the repo root you can sanity-check launcher scripts with:
+
+```bash
+node --check install.js start.js pinokio.js update.js reset.js link.js torch.js
+```
 
 ### Interface Tabs
 
@@ -159,7 +172,13 @@ The application includes special handling for Windows systems:
 - Automatically suppresses PyTorch compilation warnings
 
 ### API Access
-The application exposes a REST API for programmatic access. Visit `http://127.0.0.1:7860/docs` when the app is running to see the API documentation.
+The application exposes a REST API for programmatic access. When the app is running, replace the host and port with your actual URL (shown in the terminal or Pinokio **Open Web UI**).
+
+- **Browser / docs:** `http://127.0.0.1:7860/docs` (interactive OpenAPI).
+- **OpenAPI JSON:** `http://127.0.0.1:7860/openapi.json` (machine-readable routes and schemas).
+- **Python:** Use the [Gradio Python client](https://www.gradio.app/guides/getting-started-with-the-python-client), for example `gradio_client.Client("http://127.0.0.1:7860")`, or call REST endpoints with `requests` using paths and bodies from `/openapi.json`.
+- **JavaScript:** Use `fetch("http://127.0.0.1:7860/openapi.json")` to discover routes, then `fetch` with `POST` and JSON bodies matching those schemas (same origin if you embed a page on the Gradio port).
+- **curl:** `curl -s http://127.0.0.1:7860/openapi.json` to inspect routes; use `curl -X POST -H "Content-Type: application/json" -d "{...}" http://127.0.0.1:7860/...` with payloads taken from the OpenAPI definitions.
 
 ## 📊 Performance
 

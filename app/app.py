@@ -449,10 +449,22 @@ with gr.Blocks(
     )
 
 if __name__ == "__main__":
+    _here = os.path.dirname(os.path.abspath(__file__))
+    _root = os.path.dirname(_here)
+    _favicon = None
+    for _candidate in (
+        os.path.join(_here, "icon.png"),
+        os.path.join(_here, "icon.jpg"),
+        os.path.join(_root, "icon.jpg"),
+        os.path.join(_root, "icon.png"),
+    ):
+        if os.path.isfile(_candidate):
+            _favicon = _candidate
+            break
     demo.launch(
         server_name="127.0.0.1",
         share=False,
         show_error=True,
         show_api=True,
-        favicon_path="icon.png" if os.path.exists("icon.png") else None
+        favicon_path=_favicon,
     )
