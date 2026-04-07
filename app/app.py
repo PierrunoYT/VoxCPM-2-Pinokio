@@ -407,6 +407,5 @@ if __name__ == "__main__":
         server_name="127.0.0.1",
         share=False,
         show_error=True,
-        show_api=True,
         favicon_path=_favicon,
     )

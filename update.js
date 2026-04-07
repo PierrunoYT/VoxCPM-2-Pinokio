@@ -18,6 +18,7 @@ module.exports = {
       uri: "torch.js",
       params: {
         venv: "env",
+        triton: true,
       }
     }
   }]
