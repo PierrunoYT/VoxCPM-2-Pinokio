@@ -1,7 +1,7 @@
 module.exports = {
   version: "5.0",
-  title: "VoxCPM",
-  description: "🎙️ Tokenizer-Free TTS for Context-Aware Speech Generation and True-to-Life Voice Cloning. Supports VoxCPM 1.5 (800M, 44.1kHz) and VoxCPM 2 (2B, 48kHz, 30 languages, voice design). Built on MiniCPM-4 backbone for highly expressive, natural speech synthesis.",
+  title: "VoxCPM 2",
+  description: "🎙️ Tokenizer-Free TTS for Context-Aware Speech Generation, Voice Cloning & Voice Design. 2B params, 48kHz output, 30 languages. Built on MiniCPM-4 backbone for highly expressive, natural speech synthesis.",
   icon: "icon.jpg",
   menu: async (kernel, info) => {
     let installed = info.exists("env")

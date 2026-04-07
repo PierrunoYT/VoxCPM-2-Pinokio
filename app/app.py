@@ -16,32 +16,14 @@ import numpy as np
 from voxcpm import VoxCPM
 import tempfile
 
-# Model registry
-MODELS = {
-    "VoxCPM 1.5 (800M, 44.1kHz, zh/en)": "openbmb/VoxCPM1.5",
-    "VoxCPM 2 (2B, 48kHz, 30 languages)": "openbmb/VoxCPM2",
-}
-DEFAULT_MODEL = "VoxCPM 2 (2B, 48kHz, 30 languages)"
-
-# Global model state
-current_model_name = None
+# Global model
 model = None
 
-def load_model(model_label):
-    """Load/switch the VoxCPM model."""
-    global model, current_model_name
-    if model_label == current_model_name and model is not None:
-        return f"✅ {model_label} already loaded."
-    model_id = MODELS[model_label]
-    print(f"Loading {model_id}...")
-    is_v2 = "VoxCPM2" in model_id
-    model = VoxCPM.from_pretrained(model_id, load_denoiser=False) if is_v2 else VoxCPM.from_pretrained(model_id)
-    current_model_name = model_label
-    print(f"{model_id} loaded successfully!")
-    return f"✅ {model_label} loaded ({model.tts_model.sample_rate}Hz)"
-
-def is_v2():
-    return current_model_name is not None and "VoxCPM 2" in current_model_name
+def load_model():
+    global model
+    print("Loading VoxCPM2...")
+    model = VoxCPM.from_pretrained("openbmb/VoxCPM2", load_denoiser=False)
+    print(f"VoxCPM2 loaded! Sample rate: {model.tts_model.sample_rate}Hz")
 
 def generate_speech(
     text,
@@ -57,9 +39,9 @@ def generate_speech(
     retry_badcase_max_times,
     retry_badcase_ratio_threshold
 ):
-    """Generate speech using VoxCPM"""
+    """Generate speech using VoxCPM2"""
     if model is None:
-        return None, "⚠️ Please load a model first."
+        return None, "⚠️ Model not loaded yet."
     if not text or text.strip() == "":
         return None, "⚠️ Please enter some text to synthesize."
 
@@ -68,16 +50,6 @@ def generate_speech(
         prompt_text_input = prompt_text.strip() if prompt_text and prompt_text.strip() else None
         reference_wav_path = reference_audio if reference_audio is not None else None
 
-        # For v1.5: prompt_wav_path and prompt_text must both be provided or both None
-        if not is_v2():
-            if (prompt_wav_path is None) != (prompt_text_input is None):
-                if prompt_wav_path and not prompt_text_input:
-                    return None, "⚠️ Please provide the reference text (transcript of your reference audio) for voice cloning."
-                else:
-                    prompt_wav_path = None
-                    prompt_text_input = None
-
-        # Build generation kwargs
         kwargs = dict(
             text=text,
             cfg_value=cfg_value,
@@ -88,17 +60,11 @@ def generate_speech(
             retry_badcase_max_times=retry_badcase_max_times,
             retry_badcase_ratio_threshold=retry_badcase_ratio_threshold,
         )
-
-        if is_v2():
-            # VoxCPM2 uses reference_wav_path for cloning, prompt_wav_path+prompt_text for ultimate cloning
-            if reference_wav_path:
-                kwargs["reference_wav_path"] = reference_wav_path
-            if prompt_wav_path:
-                kwargs["prompt_wav_path"] = prompt_wav_path
-            if prompt_text_input:
-                kwargs["prompt_text"] = prompt_text_input
-        else:
+        if reference_wav_path:
+            kwargs["reference_wav_path"] = reference_wav_path
+        if prompt_wav_path:
             kwargs["prompt_wav_path"] = prompt_wav_path
+        if prompt_text_input:
             kwargs["prompt_text"] = prompt_text_input
 
         wav = model.generate(**kwargs)
@@ -127,9 +93,9 @@ def generate_streaming_speech(
     retry_badcase_max_times,
     retry_badcase_ratio_threshold
 ):
-    """Generate speech using VoxCPM in streaming mode"""
+    """Generate speech using VoxCPM2 in streaming mode"""
     if model is None:
-        return None, "⚠️ Please load a model first."
+        return None, "⚠️ Model not loaded yet."
     if not text or text.strip() == "":
         return None, "⚠️ Please enter some text to synthesize."
 
@@ -137,14 +103,6 @@ def generate_streaming_speech(
         prompt_wav_path = prompt_audio if prompt_audio is not None else None
         prompt_text_input = prompt_text.strip() if prompt_text and prompt_text.strip() else None
         reference_wav_path = reference_audio if reference_audio is not None else None
-
-        if not is_v2():
-            if (prompt_wav_path is None) != (prompt_text_input is None):
-                if prompt_wav_path and not prompt_text_input:
-                    return None, "⚠️ Please provide the reference text (transcript of your reference audio) for voice cloning."
-                else:
-                    prompt_wav_path = None
-                    prompt_text_input = None
 
         kwargs = dict(
             text=text,
@@ -156,16 +114,11 @@ def generate_streaming_speech(
             retry_badcase_max_times=retry_badcase_max_times,
             retry_badcase_ratio_threshold=retry_badcase_ratio_threshold,
         )
-
-        if is_v2():
-            if reference_wav_path:
-                kwargs["reference_wav_path"] = reference_wav_path
-            if prompt_wav_path:
-                kwargs["prompt_wav_path"] = prompt_wav_path
-            if prompt_text_input:
-                kwargs["prompt_text"] = prompt_text_input
-        else:
+        if reference_wav_path:
+            kwargs["reference_wav_path"] = reference_wav_path
+        if prompt_wav_path:
             kwargs["prompt_wav_path"] = prompt_wav_path
+        if prompt_text_input:
             kwargs["prompt_text"] = prompt_text_input
 
         chunks = []
@@ -185,7 +138,7 @@ def generate_streaming_speech(
 
 # Create Gradio interface
 with gr.Blocks(
-    title="VoxCPM - Text-to-Speech",
+    title="VoxCPM 2 - Text-to-Speech",
     theme=gr.themes.Soft(),
     css="""
         .gradio-container {
@@ -197,29 +150,16 @@ with gr.Blocks(
     """
 ) as demo:
     gr.Markdown("""
-    # 🎙️ VoxCPM - Tokenizer-Free TTS
+    # 🎙️ VoxCPM 2 - Tokenizer-Free TTS
     
-    **Context-Aware Speech Generation, Voice Cloning & Voice Design**
+    **2B params · 48kHz · 30 languages · Voice Design · Voice Cloning**
     
     - 🎭 Context-aware, expressive speech generation
-    - 🎤 True-to-life zero-shot voice cloning
-    - 🎨 Voice Design — describe the voice you want (VoxCPM 2)
-    - 🌍 30 languages supported (VoxCPM 2)
+    - 🎨 Voice Design — describe the voice you want in natural language
+    - 🎤 Zero-shot voice cloning with controllable style
+    - 🌍 30 languages supported (no language tag needed)
     - ⚡ Real-time streaming synthesis
     """)
-
-    # Model selector
-    with gr.Row():
-        model_selector = gr.Dropdown(
-            choices=list(MODELS.keys()),
-            value=DEFAULT_MODEL,
-            label="Model",
-            scale=3,
-        )
-        load_btn = gr.Button("🔄 Load Model", variant="primary", scale=1)
-        model_status = gr.Textbox(label="Model Status", scale=3, interactive=False)
-
-    load_btn.click(fn=load_model, inputs=[model_selector], outputs=[model_status])
 
     with gr.Tabs():
         # Tab 1: Basic Generation
@@ -231,7 +171,7 @@ with gr.Blocks(
                         label="Text to Synthesize",
                         placeholder="Enter your text here...",
                         lines=5,
-                        value="VoxCPM is an innovative end-to-end TTS model from ModelBest, designed to generate highly expressive speech.",
+                        value="VoxCPM2 brings multilingual support, creative voice design, and controllable voice cloning.",
                         max_lines=10,
                         show_copy_button=True
                     )
@@ -245,11 +185,11 @@ with gr.Blocks(
                     output_audio = gr.Audio(label="Generated Speech", type="filepath")
                     status_output = gr.Textbox(label="Status", lines=2)
 
-        # Tab 2: Voice Design (VoxCPM 2)
+        # Tab 2: Voice Design
         with gr.Tab("🎨 Voice Design"):
             gr.Markdown("""
-            ### 🎨 Design a Voice from Description (VoxCPM 2 only)
-            Put a voice description in parentheses at the start of your text. The model will generate a matching voice — no reference audio needed.
+            ### 🎨 Design a Voice from Description
+            Put a voice description in parentheses at the start of your text. The model generates a matching voice — no reference audio needed.
             
             **Example**: `(A young woman, gentle and sweet voice)Hello, welcome!`
             """)
@@ -277,17 +217,16 @@ with gr.Blocks(
         with gr.Tab("🎤 Voice Cloning"):
             gr.Markdown("""
             ### Clone a voice from reference audio
-            - **VoxCPM 1.5**: Provide reference audio + its transcript
-            - **VoxCPM 2 — Controllable Cloning**: Provide reference audio, optionally add style control in parentheses in text
-            - **VoxCPM 2 — Ultimate Cloning**: Provide reference audio + transcript for maximum fidelity
+            - **Controllable Cloning**: Provide reference audio, optionally add style control in parentheses
+            - **Ultimate Cloning**: Also provide the transcript of the reference audio for maximum fidelity
             """)
             with gr.Row():
                 with gr.Column():
                     text_input_clone = gr.Textbox(
                         label="Text to Synthesize",
-                        placeholder="Enter your text here... (VoxCPM2: prepend style in parentheses for controllable cloning)",
+                        placeholder="Enter text... Optionally prepend style in parentheses: (slightly faster, cheerful tone)Your text here",
                         lines=5,
-                        value="This is a demonstration of voice cloning with VoxCPM.",
+                        value="This is a demonstration of voice cloning with VoxCPM2.",
                         max_lines=10,
                         show_copy_button=True
                     )
@@ -296,8 +235,8 @@ with gr.Blocks(
                         type="filepath"
                     )
                     prompt_text_input = gr.Textbox(
-                        label="Reference Text / Transcript (required for v1.5, optional for v2 ultimate cloning)",
-                        placeholder="Transcript of the reference audio...",
+                        label="Reference Transcript (optional, for ultimate cloning)",
+                        placeholder="Exact transcript of the reference audio for maximum fidelity...",
                         lines=3,
                         max_lines=8,
                         show_copy_button=True
@@ -327,11 +266,11 @@ with gr.Blocks(
                         show_copy_button=True
                     )
                     reference_audio_advanced = gr.Audio(
-                        label="Reference Audio (for cloning, VoxCPM2)",
+                        label="Reference Audio (for cloning)",
                         type="filepath"
                     )
                     prompt_audio_advanced = gr.Audio(
-                        label="Prompt Audio (for ultimate cloning / v1.5 cloning)",
+                        label="Prompt Audio (for ultimate cloning — same as reference for max fidelity)",
                         type="filepath"
                     )
                     prompt_text_advanced = gr.Textbox(
@@ -377,26 +316,22 @@ with gr.Blocks(
     ---
     ## 👩‍🍳 Quick Tips
     
-    - **Voice Design (v2)**: Put description in parentheses at start of text: `(gentle female voice)Hello!`
-    - **Controllable Cloning (v2)**: Reference audio + style description in text
-    - **Ultimate Cloning (v2)**: Reference audio + transcript for maximum fidelity
+    - **Voice Design**: Put description in parentheses at start of text: `(gentle female voice)Hello!`
+    - **Controllable Cloning**: Reference audio + style description in text
+    - **Ultimate Cloning**: Reference audio + its transcript for maximum fidelity
     - **Short Sentences**: Increase CFG value for better clarity
     - **Long Texts**: Lower CFG value for better stability
     - **Fast Draft**: Use lower inference timesteps (5-10)
     - **High Quality**: Use higher inference timesteps (20-50)
     
-    ## 📊 Model Comparison
+    ## ⚠️ Important Notes
     
-    | Feature | VoxCPM 1.5 | VoxCPM 2 |
-    |---------|-----------|----------|
-    | Parameters | 800M | 2B |
-    | Sample Rate | 44.1kHz | 48kHz |
-    | Languages | zh/en | 30 languages |
-    | Voice Design | ❌ | ✅ |
-    | Controllable Cloning | ❌ | ✅ |
-    | VRAM | ~5 GB | ~8 GB |
+    - Voice Design and style control results may vary — try generating 1-3 times
+    - Output quality depends on prompt speech quality for cloning
+    - 30 languages supported — no language tag needed, just input text directly
+    - Please use responsibly and mark AI-generated content appropriately
     
-    **License**: Apache-2.0
+    **Model**: VoxCPM 2 (2B params, 48kHz, ~8GB VRAM) | **License**: Apache-2.0
     """)
 
     # Connect buttons — Basic generation
@@ -425,14 +360,14 @@ with gr.Blocks(
         outputs=[output_audio_design, status_output_design]
     )
 
-    # Voice Cloning — reference_audio goes as both reference (v2) and prompt (v1.5)
+    # Voice Cloning — reference_audio used for both reference_wav_path and prompt_wav_path (ultimate cloning)
     generate_clone_btn.click(
         fn=generate_speech,
         inputs=[
             text_input_clone,
-            reference_audio_input,  # prompt_audio (used by v1.5 as prompt_wav_path)
+            reference_audio_input,  # prompt_audio (for ultimate cloning)
             prompt_text_input,
-            reference_audio_input,  # reference_audio (used by v2 as reference_wav_path)
+            reference_audio_input,  # reference_audio
             use_enhancement,
             gr.State(2.0), gr.State(10),
             normalize_checkbox_clone,
@@ -475,8 +410,7 @@ with gr.Blocks(
     )
 
 if __name__ == "__main__":
-    # Auto-load default model on startup
-    print(load_model(DEFAULT_MODEL))
+    load_model()
 
     _here = os.path.dirname(os.path.abspath(__file__))
     _root = os.path.dirname(_here)
