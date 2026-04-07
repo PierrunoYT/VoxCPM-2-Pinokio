@@ -4,3 +4,4 @@ soundfile
 numpy
 modelscope
 huggingface_hub
+funasr
