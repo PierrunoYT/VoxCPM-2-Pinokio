@@ -16,15 +16,38 @@ import numpy as np
 from voxcpm import VoxCPM
 import tempfile
 
-# Initialize the model
-print("Loading VoxCPM model...")
-model = VoxCPM.from_pretrained("openbmb/VoxCPM1.5")
-print("Model loaded successfully!")
+# Model registry
+MODELS = {
+    "VoxCPM 1.5 (800M, 44.1kHz, zh/en)": "openbmb/VoxCPM1.5",
+    "VoxCPM 2 (2B, 48kHz, 30 languages)": "openbmb/VoxCPM2",
+}
+DEFAULT_MODEL = "VoxCPM 2 (2B, 48kHz, 30 languages)"
+
+# Global model state
+current_model_name = None
+model = None
+
+def load_model(model_label):
+    """Load/switch the VoxCPM model."""
+    global model, current_model_name
+    if model_label == current_model_name and model is not None:
+        return f"✅ {model_label} already loaded."
+    model_id = MODELS[model_label]
+    print(f"Loading {model_id}...")
+    is_v2 = "VoxCPM2" in model_id
+    model = VoxCPM.from_pretrained(model_id, load_denoiser=False) if is_v2 else VoxCPM.from_pretrained(model_id)
+    current_model_name = model_label
+    print(f"{model_id} loaded successfully!")
+    return f"✅ {model_label} loaded ({model.tts_model.sample_rate}Hz)"
+
+def is_v2():
+    return current_model_name is not None and "VoxCPM 2" in current_model_name
 
 def generate_speech(
     text,
     prompt_audio,
     prompt_text,
+    reference_audio,
     use_prompt_enhancement,
     cfg_value,
     inference_timesteps,
@@ -35,30 +58,28 @@ def generate_speech(
     retry_badcase_ratio_threshold
 ):
     """Generate speech using VoxCPM"""
-    
+    if model is None:
+        return None, "⚠️ Please load a model first."
     if not text or text.strip() == "":
         return None, "⚠️ Please enter some text to synthesize."
-    
+
     try:
-        # Prepare prompt audio path and text (must both be provided or both be None)
         prompt_wav_path = prompt_audio if prompt_audio is not None else None
         prompt_text_input = prompt_text.strip() if prompt_text and prompt_text.strip() else None
-        
-        # If only one is provided, drop both and warn
-        if (prompt_wav_path is None) != (prompt_text_input is None):
-            if prompt_wav_path and not prompt_text_input:
-                return None, "⚠️ Please provide the reference text (transcript of your reference audio) for voice cloning."
-            else:
-                prompt_wav_path = None
-                prompt_text_input = None
-        
-        status_msg = "🎙️ Generating speech..."
-        
-        # Generate speech
-        wav = model.generate(
+        reference_wav_path = reference_audio if reference_audio is not None else None
+
+        # For v1.5: prompt_wav_path and prompt_text must both be provided or both None
+        if not is_v2():
+            if (prompt_wav_path is None) != (prompt_text_input is None):
+                if prompt_wav_path and not prompt_text_input:
+                    return None, "⚠️ Please provide the reference text (transcript of your reference audio) for voice cloning."
+                else:
+                    prompt_wav_path = None
+                    prompt_text_input = None
+
+        # Build generation kwargs
+        kwargs = dict(
             text=text,
-            prompt_wav_path=prompt_wav_path,
-            prompt_text=prompt_text_input,
             cfg_value=cfg_value,
             inference_timesteps=inference_timesteps,
             normalize=normalize,
@@ -67,15 +88,26 @@ def generate_speech(
             retry_badcase_max_times=retry_badcase_max_times,
             retry_badcase_ratio_threshold=retry_badcase_ratio_threshold,
         )
-        
-        # Save to temporary file
+
+        if is_v2():
+            # VoxCPM2 uses reference_wav_path for cloning, prompt_wav_path+prompt_text for ultimate cloning
+            if reference_wav_path:
+                kwargs["reference_wav_path"] = reference_wav_path
+            if prompt_wav_path:
+                kwargs["prompt_wav_path"] = prompt_wav_path
+            if prompt_text_input:
+                kwargs["prompt_text"] = prompt_text_input
+        else:
+            kwargs["prompt_wav_path"] = prompt_wav_path
+            kwargs["prompt_text"] = prompt_text_input
+
+        wav = model.generate(**kwargs)
+
         output_path = tempfile.mktemp(suffix=".wav")
         sf.write(output_path, wav, model.tts_model.sample_rate)
-        
-        status_msg = f"✅ Speech generated successfully! Sample rate: {model.tts_model.sample_rate}Hz"
-        
-        return output_path, status_msg
-        
+
+        return output_path, f"✅ Speech generated! Sample rate: {model.tts_model.sample_rate}Hz"
+
     except Exception as e:
         error_msg = f"❌ Error generating speech: {str(e)}"
         print(error_msg)
@@ -85,6 +117,7 @@ def generate_streaming_speech(
     text,
     prompt_audio,
     prompt_text,
+    reference_audio,
     use_prompt_enhancement,
     cfg_value,
     inference_timesteps,
@@ -95,31 +128,26 @@ def generate_streaming_speech(
     retry_badcase_ratio_threshold
 ):
     """Generate speech using VoxCPM in streaming mode"""
-    
+    if model is None:
+        return None, "⚠️ Please load a model first."
     if not text or text.strip() == "":
         return None, "⚠️ Please enter some text to synthesize."
-    
+
     try:
-        # Prepare prompt audio path and text (must both be provided or both be None)
         prompt_wav_path = prompt_audio if prompt_audio is not None else None
         prompt_text_input = prompt_text.strip() if prompt_text and prompt_text.strip() else None
-        
-        # If only one is provided, drop both and warn
-        if (prompt_wav_path is None) != (prompt_text_input is None):
-            if prompt_wav_path and not prompt_text_input:
-                return None, "⚠️ Please provide the reference text (transcript of your reference audio) for voice cloning."
-            else:
-                prompt_wav_path = None
-                prompt_text_input = None
-        
-        status_msg = "🎙️ Generating speech (streaming mode)..."
-        
-        # Generate speech in streaming mode
-        chunks = []
-        for chunk in model.generate_streaming(
+        reference_wav_path = reference_audio if reference_audio is not None else None
+
+        if not is_v2():
+            if (prompt_wav_path is None) != (prompt_text_input is None):
+                if prompt_wav_path and not prompt_text_input:
+                    return None, "⚠️ Please provide the reference text (transcript of your reference audio) for voice cloning."
+                else:
+                    prompt_wav_path = None
+                    prompt_text_input = None
+
+        kwargs = dict(
             text=text,
-            prompt_wav_path=prompt_wav_path,
-            prompt_text=prompt_text_input,
             cfg_value=cfg_value,
             inference_timesteps=inference_timesteps,
             normalize=normalize,
@@ -127,25 +155,35 @@ def generate_streaming_speech(
             retry_badcase=retry_badcase,
             retry_badcase_max_times=retry_badcase_max_times,
             retry_badcase_ratio_threshold=retry_badcase_ratio_threshold,
-        ):
+        )
+
+        if is_v2():
+            if reference_wav_path:
+                kwargs["reference_wav_path"] = reference_wav_path
+            if prompt_wav_path:
+                kwargs["prompt_wav_path"] = prompt_wav_path
+            if prompt_text_input:
+                kwargs["prompt_text"] = prompt_text_input
+        else:
+            kwargs["prompt_wav_path"] = prompt_wav_path
+            kwargs["prompt_text"] = prompt_text_input
+
+        chunks = []
+        for chunk in model.generate_streaming(**kwargs):
             chunks.append(chunk)
-        
         wav = np.concatenate(chunks)
-        
-        # Save to temporary file
+
         output_path = tempfile.mktemp(suffix=".wav")
         sf.write(output_path, wav, model.tts_model.sample_rate)
-        
-        status_msg = f"✅ Speech generated successfully (streaming)! Sample rate: {model.tts_model.sample_rate}Hz"
-        
-        return output_path, status_msg
-        
+
+        return output_path, f"✅ Speech generated (streaming)! Sample rate: {model.tts_model.sample_rate}Hz"
+
     except Exception as e:
         error_msg = f"❌ Error generating speech: {str(e)}"
         print(error_msg)
         return None, error_msg
 
-# Create Gradio interface with improved styling
+# Create Gradio interface
 with gr.Blocks(
     title="VoxCPM - Text-to-Speech",
     theme=gr.themes.Soft(),
@@ -161,22 +199,32 @@ with gr.Blocks(
     gr.Markdown("""
     # 🎙️ VoxCPM - Tokenizer-Free TTS
     
-    **Context-Aware Speech Generation and True-to-Life Voice Cloning**
+    **Context-Aware Speech Generation, Voice Cloning & Voice Design**
     
-    VoxCPM is a novel tokenizer-free Text-to-Speech system that enables:
     - 🎭 Context-aware, expressive speech generation
     - 🎤 True-to-life zero-shot voice cloning
-    - ⚡ High-efficiency synthesis (RTF 0.17 on RTX 4090)
+    - 🎨 Voice Design — describe the voice you want (VoxCPM 2)
+    - 🌍 30 languages supported (VoxCPM 2)
+    - ⚡ Real-time streaming synthesis
     """)
-    
+
+    # Model selector
+    with gr.Row():
+        model_selector = gr.Dropdown(
+            choices=list(MODELS.keys()),
+            value=DEFAULT_MODEL,
+            label="Model",
+            scale=3,
+        )
+        load_btn = gr.Button("🔄 Load Model", variant="primary", scale=1)
+        model_status = gr.Textbox(label="Model Status", scale=3, interactive=False)
+
+    load_btn.click(fn=load_model, inputs=[model_selector], outputs=[model_status])
+
     with gr.Tabs():
         # Tab 1: Basic Generation
         with gr.Tab("🎵 Basic Generation"):
-            gr.Markdown("""
-            ### 🥚 Step 1: Prepare Your Content
-            Enter the text you want to synthesize. You can use regular text or phoneme input.
-            """)
-            
+            gr.Markdown("### Generate speech from text. The model infers prosody from content automatically.")
             with gr.Row():
                 with gr.Column():
                     text_input = gr.Textbox(
@@ -187,75 +235,87 @@ with gr.Blocks(
                         max_lines=10,
                         show_copy_button=True
                     )
-                    
                     normalize_checkbox = gr.Checkbox(
                         label="Text Normalization",
                         value=False,
                         info="Enable for regular text (numbers, abbreviations). Disable for phoneme input."
                     )
-                    
                     generate_btn = gr.Button("🎙️ Generate Speech", variant="primary", size="lg")
-                    
                 with gr.Column():
                     output_audio = gr.Audio(label="Generated Speech", type="filepath")
                     status_output = gr.Textbox(label="Status", lines=2)
-        
-        # Tab 2: Voice Cloning
+
+        # Tab 2: Voice Design (VoxCPM 2)
+        with gr.Tab("🎨 Voice Design"):
+            gr.Markdown("""
+            ### 🎨 Design a Voice from Description (VoxCPM 2 only)
+            Put a voice description in parentheses at the start of your text. The model will generate a matching voice — no reference audio needed.
+            
+            **Example**: `(A young woman, gentle and sweet voice)Hello, welcome!`
+            """)
+            with gr.Row():
+                with gr.Column():
+                    text_input_design = gr.Textbox(
+                        label="Text with Voice Description",
+                        placeholder="(A young woman, gentle and sweet voice)Hello, welcome to VoxCPM2!",
+                        lines=5,
+                        value="(A young woman, gentle and sweet voice)Hello, welcome to VoxCPM2!",
+                        max_lines=10,
+                        show_copy_button=True
+                    )
+                    gr.Markdown("""
+                    **Voice description tips**: gender, age, accent, tone, emotion, pace, pitch...  
+                    e.g. `(Male, deep voice, calm, slow pace)`, `(Child, cheerful, energetic)`
+                    """)
+                    normalize_design = gr.Checkbox(label="Text Normalization", value=False)
+                    generate_design_btn = gr.Button("🎨 Generate with Voice Design", variant="primary", size="lg")
+                with gr.Column():
+                    output_audio_design = gr.Audio(label="Generated Speech", type="filepath")
+                    status_output_design = gr.Textbox(label="Status", lines=2)
+
+        # Tab 3: Voice Cloning
         with gr.Tab("🎤 Voice Cloning"):
             gr.Markdown("""
-            ### 🍳 Step 2: Choose Your Voice Style
-            Upload a reference audio to clone a specific voice, or leave empty for the model to improvise.
+            ### Clone a voice from reference audio
+            - **VoxCPM 1.5**: Provide reference audio + its transcript
+            - **VoxCPM 2 — Controllable Cloning**: Provide reference audio, optionally add style control in parentheses in text
+            - **VoxCPM 2 — Ultimate Cloning**: Provide reference audio + transcript for maximum fidelity
             """)
-            
             with gr.Row():
                 with gr.Column():
                     text_input_clone = gr.Textbox(
                         label="Text to Synthesize",
-                        placeholder="Enter your text here...",
+                        placeholder="Enter your text here... (VoxCPM2: prepend style in parentheses for controllable cloning)",
                         lines=5,
                         value="This is a demonstration of voice cloning with VoxCPM.",
                         max_lines=10,
                         show_copy_button=True
                     )
-                    
-                    prompt_audio_input = gr.Audio(
-                        label="Reference Audio (Prompt Speech)",
+                    reference_audio_input = gr.Audio(
+                        label="Reference Audio (for cloning)",
                         type="filepath"
                     )
-                    
                     prompt_text_input = gr.Textbox(
-                        label="Reference Text (Required for Voice Cloning)",
+                        label="Reference Text / Transcript (required for v1.5, optional for v2 ultimate cloning)",
                         placeholder="Transcript of the reference audio...",
                         lines=3,
-                        info="You must provide the transcript of the reference audio for voice cloning to work",
                         max_lines=8,
                         show_copy_button=True
                     )
-                    
                     use_enhancement = gr.Checkbox(
                         label="Prompt Speech Enhancement",
                         value=False,
-                        info="Enable for clean voice (16kHz). Disable for high-quality cloning (up to 44.1kHz)"
+                        info="Enable for clean voice (16kHz). Disable for high-quality cloning."
                     )
-                    
-                    normalize_checkbox_clone = gr.Checkbox(
-                        label="Text Normalization",
-                        value=False
-                    )
-                    
+                    normalize_checkbox_clone = gr.Checkbox(label="Text Normalization", value=False)
                     generate_clone_btn = gr.Button("🎤 Clone Voice", variant="primary", size="lg")
-                    
                 with gr.Column():
                     output_audio_clone = gr.Audio(label="Generated Speech", type="filepath")
                     status_output_clone = gr.Textbox(label="Status", lines=2)
-        
-        # Tab 3: Advanced Settings
+
+        # Tab 4: Advanced Settings
         with gr.Tab("⚙️ Advanced Settings"):
-            gr.Markdown("""
-            ### 🧂 Step 3: Fine-Tune Your Results
-            Adjust these parameters to control the quality and characteristics of the generated speech.
-            """)
-            
+            gr.Markdown("### Full control over all generation parameters.")
             with gr.Row():
                 with gr.Column():
                     text_input_advanced = gr.Textbox(
@@ -266,150 +326,122 @@ with gr.Blocks(
                         max_lines=10,
                         show_copy_button=True
                     )
-                    
-                    prompt_audio_advanced = gr.Audio(
-                        label="Reference Audio (Optional)",
+                    reference_audio_advanced = gr.Audio(
+                        label="Reference Audio (for cloning, VoxCPM2)",
                         type="filepath"
                     )
-                    
+                    prompt_audio_advanced = gr.Audio(
+                        label="Prompt Audio (for ultimate cloning / v1.5 cloning)",
+                        type="filepath"
+                    )
                     prompt_text_advanced = gr.Textbox(
-                        label="Reference Text (Optional)",
-                        placeholder="Transcript of the reference audio...",
+                        label="Prompt Text / Transcript",
+                        placeholder="Transcript of the prompt audio...",
                         lines=2,
                         max_lines=8,
                         show_copy_button=True
                     )
-                    
                     with gr.Accordion("🎛️ Generation Parameters", open=True):
                         cfg_value_slider = gr.Slider(
-                            minimum=0.5,
-                            maximum=5.0,
-                            value=2.0,
-                            step=0.1,
+                            minimum=0.5, maximum=5.0, value=2.0, step=0.1,
                             label="CFG Value",
-                            info="Higher = better adherence to prompt, but may sound strained. Lower = more relaxed."
+                            info="Higher = better adherence to prompt. Lower = more relaxed."
                         )
-                        
                         inference_steps_slider = gr.Slider(
-                            minimum=5,
-                            maximum=50,
-                            value=10,
-                            step=1,
+                            minimum=5, maximum=50, value=10, step=1,
                             label="Inference Timesteps",
-                            info="Higher = better quality, slower. Lower = faster, draft quality."
+                            info="Higher = better quality, slower."
                         )
-                        
-                        normalize_advanced = gr.Checkbox(
-                            label="Text Normalization",
-                            value=False
-                        )
-                        
+                        normalize_advanced = gr.Checkbox(label="Text Normalization", value=False)
                         denoise_checkbox = gr.Checkbox(
-                            label="Denoise Output",
-                            value=False,
+                            label="Denoise Output", value=False,
                             info="Enable external denoising (may cause distortion, limits to 16kHz)"
                         )
-                        
-                        use_enhancement_advanced = gr.Checkbox(
-                            label="Prompt Speech Enhancement",
-                            value=False
-                        )
-                    
+                        use_enhancement_advanced = gr.Checkbox(label="Prompt Speech Enhancement", value=False)
                     with gr.Accordion("🔄 Retry Settings", open=False):
-                        retry_badcase = gr.Checkbox(
-                            label="Enable Retry for Bad Cases",
-                            value=True,
-                            info="Automatically retry if generation is unstable"
-                        )
-                        
-                        retry_max_times = gr.Slider(
-                            minimum=1,
-                            maximum=10,
-                            value=3,
-                            step=1,
-                            label="Maximum Retry Times"
-                        )
-                        
+                        retry_badcase = gr.Checkbox(label="Enable Retry for Bad Cases", value=True)
+                        retry_max_times = gr.Slider(minimum=1, maximum=10, value=3, step=1, label="Maximum Retry Times")
                         retry_ratio_threshold = gr.Slider(
-                            minimum=3.0,
-                            maximum=10.0,
-                            value=6.0,
-                            step=0.5,
-                            label="Retry Ratio Threshold",
-                            info="Maximum length restriction for bad case detection"
+                            minimum=3.0, maximum=10.0, value=6.0, step=0.5,
+                            label="Retry Ratio Threshold"
                         )
-                    
                     with gr.Row():
                         generate_advanced_btn = gr.Button("🎙️ Generate", variant="primary")
                         generate_streaming_btn = gr.Button("⚡ Generate (Streaming)", variant="secondary")
-                    
                 with gr.Column():
                     output_audio_advanced = gr.Audio(label="Generated Speech", type="filepath")
                     status_output_advanced = gr.Textbox(label="Status", lines=3)
-    
+
     # Info section
     gr.Markdown("""
     ---
     ## 👩‍🍳 Quick Tips
     
-    - **Regular Text**: Keep "Text Normalization" ON for natural text with numbers and punctuation
-    - **Phoneme Input**: Turn "Text Normalization" OFF for precise pronunciation control
-    - **Clean Voice Cloning**: Enable "Prompt Speech Enhancement" (16kHz limit)
-    - **High-Quality Cloning**: Disable enhancement for up to 44.1kHz sampling
+    - **Voice Design (v2)**: Put description in parentheses at start of text: `(gentle female voice)Hello!`
+    - **Controllable Cloning (v2)**: Reference audio + style description in text
+    - **Ultimate Cloning (v2)**: Reference audio + transcript for maximum fidelity
     - **Short Sentences**: Increase CFG value for better clarity
     - **Long Texts**: Lower CFG value for better stability
     - **Fast Draft**: Use lower inference timesteps (5-10)
     - **High Quality**: Use higher inference timesteps (20-50)
     
-    ## ⚠️ Important Notes
+    ## 📊 Model Comparison
     
-    - Output quality depends on prompt speech quality
-    - Model is trained on Chinese and English data
-    - Please use responsibly and mark AI-generated content appropriately
-    - For research and development purposes only
+    | Feature | VoxCPM 1.5 | VoxCPM 2 |
+    |---------|-----------|----------|
+    | Parameters | 800M | 2B |
+    | Sample Rate | 44.1kHz | 48kHz |
+    | Languages | zh/en | 30 languages |
+    | Voice Design | ❌ | ✅ |
+    | Controllable Cloning | ❌ | ✅ |
+    | VRAM | ~5 GB | ~8 GB |
     
-    **License**: Apache-2.0 | **Model**: VoxCPM1.5 (44.1kHz, 6.25Hz token rate)
+    **License**: Apache-2.0
     """)
-    
-    # Connect buttons to functions
-    # Basic generation
+
+    # Connect buttons — Basic generation
     generate_btn.click(
         fn=generate_speech,
         inputs=[
             text_input,
-            gr.State(None),  # No prompt audio
-            gr.State(None),  # No prompt text
-            gr.State(False),  # No enhancement
-            gr.State(2.0),  # Default CFG
-            gr.State(10),  # Default timesteps
+            gr.State(None), gr.State(None), gr.State(None),
+            gr.State(False), gr.State(2.0), gr.State(10),
             normalize_checkbox,
-            gr.State(False),  # No denoise
-            gr.State(True),  # Retry enabled
-            gr.State(3),  # Max retry times
-            gr.State(6.0),  # Retry threshold
+            gr.State(False), gr.State(True), gr.State(3), gr.State(6.0),
         ],
         outputs=[output_audio, status_output]
     )
-    
-    # Voice cloning
+
+    # Voice Design
+    generate_design_btn.click(
+        fn=generate_speech,
+        inputs=[
+            text_input_design,
+            gr.State(None), gr.State(None), gr.State(None),
+            gr.State(False), gr.State(2.0), gr.State(10),
+            normalize_design,
+            gr.State(False), gr.State(True), gr.State(3), gr.State(6.0),
+        ],
+        outputs=[output_audio_design, status_output_design]
+    )
+
+    # Voice Cloning — reference_audio goes as both reference (v2) and prompt (v1.5)
     generate_clone_btn.click(
         fn=generate_speech,
         inputs=[
             text_input_clone,
-            prompt_audio_input,
+            reference_audio_input,  # prompt_audio (used by v1.5 as prompt_wav_path)
             prompt_text_input,
+            reference_audio_input,  # reference_audio (used by v2 as reference_wav_path)
             use_enhancement,
-            gr.State(2.0),
-            gr.State(10),
+            gr.State(2.0), gr.State(10),
             normalize_checkbox_clone,
-            use_enhancement,  # Use enhancement as denoise
-            gr.State(True),
-            gr.State(3),
-            gr.State(6.0),
+            use_enhancement,
+            gr.State(True), gr.State(3), gr.State(6.0),
         ],
         outputs=[output_audio_clone, status_output_clone]
     )
-    
+
     # Advanced generation
     generate_advanced_btn.click(
         fn=generate_speech,
@@ -417,38 +449,35 @@ with gr.Blocks(
             text_input_advanced,
             prompt_audio_advanced,
             prompt_text_advanced,
+            reference_audio_advanced,
             use_enhancement_advanced,
-            cfg_value_slider,
-            inference_steps_slider,
-            normalize_advanced,
-            denoise_checkbox,
-            retry_badcase,
-            retry_max_times,
-            retry_ratio_threshold,
+            cfg_value_slider, inference_steps_slider,
+            normalize_advanced, denoise_checkbox,
+            retry_badcase, retry_max_times, retry_ratio_threshold,
         ],
         outputs=[output_audio_advanced, status_output_advanced]
     )
-    
-    # Advanced streaming generation
+
+    # Advanced streaming
     generate_streaming_btn.click(
         fn=generate_streaming_speech,
         inputs=[
             text_input_advanced,
             prompt_audio_advanced,
             prompt_text_advanced,
+            reference_audio_advanced,
             use_enhancement_advanced,
-            cfg_value_slider,
-            inference_steps_slider,
-            normalize_advanced,
-            denoise_checkbox,
-            retry_badcase,
-            retry_max_times,
-            retry_ratio_threshold,
+            cfg_value_slider, inference_steps_slider,
+            normalize_advanced, denoise_checkbox,
+            retry_badcase, retry_max_times, retry_ratio_threshold,
         ],
         outputs=[output_audio_advanced, status_output_advanced]
     )
 
 if __name__ == "__main__":
+    # Auto-load default model on startup
+    print(load_model(DEFAULT_MODEL))
+
     _here = os.path.dirname(os.path.abspath(__file__))
     _root = os.path.dirname(_here)
     _favicon = None

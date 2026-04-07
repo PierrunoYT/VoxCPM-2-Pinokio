@@ -1,5 +1,5 @@
 {
-  "title": "VoxCPM-1.5",
-  "description": "Tokenizer-free TTS for context-aware speech and voice cloning (Gradio UI).",
+  "title": "VoxCPM",
+  "description": "Tokenizer-free TTS for context-aware speech, voice cloning, and voice design (Gradio UI). Supports VoxCPM 1.5 and VoxCPM 2.",
   "icon": "icon.jpg"
 }

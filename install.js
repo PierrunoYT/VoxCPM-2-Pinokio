@@ -26,7 +26,8 @@ module.exports = {
         venv: "env",
         path: "app",
         message: [
-          "hf download openbmb/VoxCPM1.5"
+          "hf download openbmb/VoxCPM1.5",
+          "hf download openbmb/VoxCPM2"
         ],
       }
     },
@@ -43,7 +44,7 @@ module.exports = {
     {
       method: "notify",
       params: {
-        html: "Installation complete! Click 'Start' to launch VoxCPM."
+        html: "Installation complete! Click 'Start' to launch VoxCPM. Both VoxCPM 1.5 and VoxCPM 2 are available."
       }
     }
   ]
