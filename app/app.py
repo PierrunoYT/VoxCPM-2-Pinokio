@@ -264,6 +264,12 @@ with gr.Blocks(
                 info="Auto-transcribes reference audio for maximum vocal fidelity. Disables Control Instruction.",
                 elem_classes=["switch-toggle"],
             )
+            gr.Markdown(
+                "⚠️ **Note:** Ultimate Cloning works by continuing from the reference audio. "
+                "This may produce a brief artifact at the start of the output. "
+                "For clean results, use **Controllable Cloning** instead (reference audio + Control Instruction, without Ultimate Cloning).",
+                visible=True,
+            )
 
             # Prompt text (auto-transcribed, shown only in ultimate mode)
             prompt_text = gr.Textbox(
