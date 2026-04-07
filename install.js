@@ -4,9 +4,8 @@ module.exports = {
       method: "shell.run",
       params: {
         venv: "env",
-        path: "app",
         message: [
-          "uv pip install -r requirements.txt"
+          "uv pip install -r app/requirements.txt"
         ],
       }
     },
@@ -15,7 +14,6 @@ module.exports = {
       params: {
         uri: "torch.js",
         params: {
-          path: "app",
           venv: "env",
         }
       }
@@ -24,7 +22,6 @@ module.exports = {
       method: "shell.run",
       params: {
         venv: "env",
-        path: "app",
         message: [
           "hf download openbmb/VoxCPM2"
         ],
@@ -34,7 +31,6 @@ module.exports = {
       method: "shell.run",
       params: {
         venv: "env",
-        path: "app",
         message: [
           "python -c \"from modelscope import snapshot_download; snapshot_download('iic/speech_zipenhancer_ans_multiloss_16k_base'); snapshot_download('iic/SenseVoiceSmall')\""
         ],
