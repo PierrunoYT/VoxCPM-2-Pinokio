@@ -354,6 +354,13 @@ with gr.Blocks(
         outputs=[prompt_text],
     )
 
+    # Re-transcribe whenever the reference audio changes while Ultimate Cloning is on
+    reference_audio.change(
+        fn=transcribe_audio,
+        inputs=[use_ultimate_cloning, reference_audio],
+        outputs=[prompt_text],
+    )
+
     # Generate
     generate_btn.click(
         fn=generate_speech,
