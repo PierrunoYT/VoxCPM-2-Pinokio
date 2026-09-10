@@ -1,14 +1,15 @@
 import os
-import sys
 
 # Disable torch.compile completely to avoid Dynamo errors on Windows
 os.environ['TORCH_COMPILE_DISABLE'] = '1'
 os.environ['TORCHDYNAMO_DISABLE'] = '1'
 
 import torch
-# Disable dynamo before any model imports
+# Disable dynamo before any model imports.
+# NOTE: torch._dynamo.disable() with no argument only returns a decorator, it does
+# not disable anything globally -- the config flag is what actually turns it off.
 torch._dynamo.config.suppress_errors = True
-torch._dynamo.disable()
+torch._dynamo.config.disable = True
 
 import gradio as gr
 import soundfile as sf
@@ -17,9 +18,23 @@ from voxcpm import VoxCPM
 from funasr import AutoModel
 import tempfile
 
+# Generated audio is written here so the files are grouped and easy to clean up,
+# rather than being scattered through the system temp root.
+_OUTPUT_DIR = os.path.join(tempfile.gettempdir(), "voxcpm2_outputs")
+os.makedirs(_OUTPUT_DIR, exist_ok=True)
+
 # Global models
 model = None
 asr_model = None
+
+def _pick_device():
+    """CUDA, then Apple Silicon MPS, then CPU."""
+    if torch.cuda.is_available():
+        return "cuda:0"
+    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
 
 def load_models():
     global model, asr_model
@@ -28,7 +43,7 @@ def load_models():
     print(f"VoxCPM2 loaded! Sample rate: {model.tts_model.sample_rate}Hz")
 
     print("Loading SenseVoice ASR model...")
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    device = _pick_device()
     asr_model = AutoModel(
         model="iic/SenseVoiceSmall",
         disable_update=True,
@@ -36,21 +51,104 @@ def load_models():
     )
     print("SenseVoice loaded!")
 
+def _to_numpy(wav):
+    """Model outputs may be torch tensors; soundfile needs numpy."""
+    if hasattr(wav, "detach"):
+        wav = wav.detach().cpu().numpy()
+    return np.asarray(wav)
+
+
+def _write_wav(wav):
+    """Write audio to a uniquely named temp file.
+
+    tempfile.mktemp() is deprecated and racy -- mkstemp() creates the file
+    atomically. We close the descriptor immediately so soundfile can reopen it
+    by path, which is safe because the name is already reserved by us.
+    """
+    fd, output_path = tempfile.mkstemp(suffix=".wav", prefix="voxcpm2_", dir=_OUTPUT_DIR)
+    os.close(fd)
+    sf.write(output_path, _to_numpy(wav), model.tts_model.sample_rate)
+    return output_path
+
+
 def transcribe_audio(checked, audio_path):
     """Auto-transcribe reference audio using SenseVoice (only when ultimate cloning is ON)"""
-    if not checked or audio_path is None:
+    if not checked:
         return gr.update()
+    # Reference audio was cleared -- drop the stale transcript instead of
+    # leaving the previous clip's text behind.
+    if audio_path is None:
+        return gr.update(value="")
     if asr_model is None:
         return gr.update(value="⚠️ ASR model not loaded.")
     try:
         print("Running ASR on reference audio...")
         res = asr_model.generate(input=audio_path, language="auto", use_itn=True)
+        if not res or not res[0].get("text"):
+            print("ASR returned no text.")
+            return gr.update(value="")
         text = res[0]["text"].split("|>")[-1]
         print(f"ASR result: {text[:60]}...")
         return gr.update(value=text)
     except Exception as e:
         print(f"ASR error: {e}")
         return gr.update(value="")
+
+
+def _build_generation_kwargs(
+    text,
+    control_instruction,
+    reference_audio,
+    prompt_text,
+    use_ultimate_cloning,
+    cfg_value,
+    inference_timesteps,
+    normalize,
+    denoise,
+):
+    """Assemble the kwargs shared by both the standard and streaming paths.
+
+    Returns (kwargs, reference_wav_path, prompt_text_clean, control).
+    """
+    text = text.strip()
+    control = (control_instruction or "").strip()
+    reference_wav_path = reference_audio if reference_audio is not None else None
+    prompt_text_clean = prompt_text.strip() if prompt_text and prompt_text.strip() else None
+
+    # In ultimate cloning mode, control instruction is disabled
+    if use_ultimate_cloning:
+        control = ""
+
+    # Prepend control instruction in parentheses (for voice design / controllable cloning)
+    final_text = f"({control}){text}" if control else text
+
+    kwargs = dict(
+        text=final_text,
+        cfg_value=float(cfg_value),
+        inference_timesteps=int(inference_timesteps),
+        normalize=normalize,
+        denoise=denoise,
+    )
+
+    if reference_wav_path:
+        kwargs["reference_wav_path"] = reference_wav_path
+
+    # Ultimate cloning: pass reference as both prompt and reference
+    if use_ultimate_cloning and reference_wav_path and prompt_text_clean:
+        kwargs["prompt_wav_path"] = reference_wav_path
+        kwargs["prompt_text"] = prompt_text_clean
+
+    return kwargs, reference_wav_path, prompt_text_clean, control
+
+
+def _validate_request(text):
+    """Return an error status string, or None when the request is usable."""
+    if model is None:
+        return "⚠️ Model not loaded yet."
+    if not text or text.strip() == "":
+        return "⚠️ Please enter some text to synthesize."
+    return None
+
 
 def generate_speech(
     text,
@@ -64,54 +162,34 @@ def generate_speech(
     denoise,
 ):
     """Generate speech using VoxCPM2"""
-    if model is None:
-        return None, "⚠️ Model not loaded yet."
-    if not text or text.strip() == "":
-        return None, "⚠️ Please enter some text to synthesize."
+    error = _validate_request(text)
+    if error:
+        return None, error
 
     try:
-        text = text.strip()
-        control = (control_instruction or "").strip()
-        reference_wav_path = reference_audio if reference_audio is not None else None
-        prompt_text_clean = prompt_text.strip() if prompt_text and prompt_text.strip() else None
-
-        # In ultimate cloning mode, control instruction is disabled
-        if use_ultimate_cloning:
-            control = ""
-
-        # Prepend control instruction in parentheses (for voice design / controllable cloning)
-        final_text = f"({control}){text}" if control else text
-
-        kwargs = dict(
-            text=final_text,
-            cfg_value=float(cfg_value),
-            inference_timesteps=int(inference_timesteps),
-            normalize=normalize,
-            denoise=denoise,
+        kwargs, reference_wav_path, prompt_text_clean, control = _build_generation_kwargs(
+            text,
+            control_instruction,
+            reference_audio,
+            prompt_text,
+            use_ultimate_cloning,
+            cfg_value,
+            inference_timesteps,
+            normalize,
+            denoise,
         )
 
-        if reference_wav_path:
-            kwargs["reference_wav_path"] = reference_wav_path
-
-        # Ultimate cloning: pass reference as both prompt and reference
-        if use_ultimate_cloning and reference_wav_path and prompt_text_clean:
-            kwargs["prompt_wav_path"] = reference_wav_path
-            kwargs["prompt_text"] = prompt_text_clean
-
         wav = model.generate(**kwargs)
+        output_path = _write_wav(wav)
 
-        output_path = tempfile.mktemp(suffix=".wav")
-        sf.write(output_path, wav, model.tts_model.sample_rate)
-
-        mode = "ultimate cloning" if (use_ultimate_cloning and prompt_text_clean) else \
-               "controllable cloning" if reference_wav_path else \
-               "voice design" if control else "basic"
+        mode = "ultimate cloning" if (use_ultimate_cloning and prompt_text_clean) else                "controllable cloning" if reference_wav_path else                "voice design" if control else "basic"
         return output_path, f"✅ Generated ({mode})! Sample rate: {model.tts_model.sample_rate}Hz"
 
     except Exception as e:
         error_msg = f"❌ Error: {str(e)}"
         print(error_msg)
         return None, error_msg
+
 
 def generate_streaming_speech(
     text,
@@ -125,44 +203,29 @@ def generate_streaming_speech(
     denoise,
 ):
     """Generate speech using VoxCPM2 in streaming mode"""
-    if model is None:
-        return None, "⚠️ Model not loaded yet."
-    if not text or text.strip() == "":
-        return None, "⚠️ Please enter some text to synthesize."
+    error = _validate_request(text)
+    if error:
+        return None, error
 
     try:
-        text = text.strip()
-        control = (control_instruction or "").strip()
-        reference_wav_path = reference_audio if reference_audio is not None else None
-        prompt_text_clean = prompt_text.strip() if prompt_text and prompt_text.strip() else None
-
-        if use_ultimate_cloning:
-            control = ""
-
-        final_text = f"({control}){text}" if control else text
-
-        kwargs = dict(
-            text=final_text,
-            cfg_value=float(cfg_value),
-            inference_timesteps=int(inference_timesteps),
-            normalize=normalize,
-            denoise=denoise,
+        kwargs, _, _, _ = _build_generation_kwargs(
+            text,
+            control_instruction,
+            reference_audio,
+            prompt_text,
+            use_ultimate_cloning,
+            cfg_value,
+            inference_timesteps,
+            normalize,
+            denoise,
         )
 
-        if reference_wav_path:
-            kwargs["reference_wav_path"] = reference_wav_path
-
-        if use_ultimate_cloning and reference_wav_path and prompt_text_clean:
-            kwargs["prompt_wav_path"] = reference_wav_path
-            kwargs["prompt_text"] = prompt_text_clean
-
-        chunks = []
-        for chunk in model.generate_streaming(**kwargs):
-            chunks.append(chunk)
+        chunks = [_to_numpy(chunk) for chunk in model.generate_streaming(**kwargs)]
+        if not chunks:
+            return None, "⚠️ Streaming generation produced no audio."
         wav = np.concatenate(chunks)
 
-        output_path = tempfile.mktemp(suffix=".wav")
-        sf.write(output_path, wav, model.tts_model.sample_rate)
+        output_path = _write_wav(wav)
 
         return output_path, f"✅ Generated (streaming)! Sample rate: {model.tts_model.sample_rate}Hz"
 
@@ -170,6 +233,7 @@ def generate_streaming_speech(
         error_msg = f"❌ Error: {str(e)}"
         print(error_msg)
         return None, error_msg
+
 
 def on_ultimate_toggle(checked):
     """Toggle UI when ultimate cloning mode changes"""
