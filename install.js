@@ -23,21 +23,9 @@ module.exports = {
       }
     },
     {
-      method: "shell.run",
+      method: "script.start",
       params: {
-        venv: "env",
-        message: [
-          "hf download openbmb/VoxCPM2"
-        ],
-      }
-    },
-    {
-      method: "shell.run",
-      params: {
-        venv: "env",
-        message: [
-          "python -c \"from modelscope import snapshot_download; snapshot_download('iic/speech_zipenhancer_ans_multiloss_16k_base'); snapshot_download('iic/SenseVoiceSmall')\""
-        ],
+        uri: "download.js"
       }
     },
     {
