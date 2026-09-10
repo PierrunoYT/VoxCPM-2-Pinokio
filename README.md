@@ -61,8 +61,13 @@ When the app is running, the URL is shown in the Pinokio **Open Web UI** button.
 
 Two endpoints are exposed:
 
-- `POST /run/generate` — standard generation
-- `POST /run/generate_streaming` — streaming generation
+- `generate` — standard generation
+- `generate_streaming` — streaming generation
+
+Gradio 5 serves these under `/gradio_api/call/<api_name>` as a two-step call:
+`POST` the arguments to get an `event_id`, then `GET` the same path plus
+`/<event_id>` to stream the result. On Gradio 4 drop the `/gradio_api` prefix
+(`/call/<api_name>`). The old Gradio 3 `/run/<api_name>` route no longer exists.
 
 ### Python (Gradio client)
 
@@ -91,8 +96,10 @@ print(status)  # ✅ Generated (voice design)! Sample rate: 48000Hz
 
 ```javascript
 const BASE_URL = "<BASE_URL>";
+const ENDPOINT = `${BASE_URL}/gradio_api/call/generate`;
 
-const response = await fetch(`${BASE_URL}/run/generate`, {
+// Step 1: submit the arguments, receive an event id.
+const submit = await fetch(ENDPOINT, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -109,31 +116,26 @@ const response = await fetch(`${BASE_URL}/run/generate`, {
     ],
   }),
 });
-const result = await response.json();
-console.log(result.data[1]); // status message
+const { event_id } = await submit.json();
+
+// Step 2: read the server-sent-event stream for the result.
+const stream = await fetch(`${ENDPOINT}/${event_id}`);
+console.log(await stream.text());
 ```
 
 ### curl
 
 ```bash
-curl -s -X POST "<BASE_URL>/run/generate" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "data": [
-      "VoxCPM2 brings multilingual support and controllable voice cloning.",
-      "A warm young woman, calm and expressive",
-      null,
-      "",
-      false,
-      2.0,
-      10,
-      false,
-      false
-    ]
-  }'
+curl -s -X POST "<BASE_URL>/gradio_api/call/generate" -H "Content-Type: application/json" -d '{"data": ["VoxCPM2 brings multilingual support and controllable voice cloning.", "A warm young woman, calm and expressive", null, "", false, 2.0, 10, false, false]}'
 ```
 
-The response `data[0]` contains the generated audio file path and `data[1]` the status string.
+That returns `{"event_id": "..."}`; fetch the result with:
+
+```bash
+curl -s -N "<BASE_URL>/gradio_api/call/generate/<EVENT_ID>"
+```
+
+The streamed `data` array holds the generated audio file reference at index 0 and the status string at index 1.
 
 ## Technical Details
 
