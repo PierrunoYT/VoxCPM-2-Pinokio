@@ -182,7 +182,14 @@ def generate_speech(
         wav = model.generate(**kwargs)
         output_path = _write_wav(wav)
 
-        mode = "ultimate cloning" if (use_ultimate_cloning and prompt_text_clean) else                "controllable cloning" if reference_wav_path else                "voice design" if control else "basic"
+        if use_ultimate_cloning and prompt_text_clean:
+            mode = "ultimate cloning"
+        elif reference_wav_path:
+            mode = "controllable cloning"
+        elif control:
+            mode = "voice design"
+        else:
+            mode = "basic"
         return output_path, f"✅ Generated ({mode})! Sample rate: {model.tts_model.sample_rate}Hz"
 
     except Exception as e:

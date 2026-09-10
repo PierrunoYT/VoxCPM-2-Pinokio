@@ -17,7 +17,7 @@ module.exports = {
           "python app/app.py"
         ],
         on: [{
-          "event": "/(http:\/\/\S+)/",
+          "event": "/(http:\/\/\\S+)/",
           "done": true
         }]
       }
