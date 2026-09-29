@@ -229,10 +229,15 @@ def generate_streaming_speech(
     normalize,
     denoise,
 ):
-    """Generate speech using VoxCPM2 in streaming mode"""
+    """Generate speech using VoxCPM2 in streaming mode.
+
+    A generator so the status box updates as chunks arrive, instead of the UI
+    sitting silent until the whole clip is done.
+    """
     error = _validate_request(text)
     if error:
-        return None, error
+        yield None, error
+        return
 
     try:
         kwargs, _, _, _ = _build_generation_kwargs(
@@ -247,19 +252,27 @@ def generate_streaming_speech(
             denoise,
         )
 
-        chunks = [_to_numpy(chunk) for chunk in model.generate_streaming(**kwargs)]
+        sample_rate = model.tts_model.sample_rate
+        chunks = []
+        samples = 0
+        for chunk in model.generate_streaming(**kwargs):
+            chunk = _to_numpy(chunk)
+            chunks.append(chunk)
+            samples += chunk.shape[-1]
+            yield gr.update(), f"⏳ Streaming… {samples / sample_rate:.1f}s of audio generated"
         if not chunks:
-            return None, "⚠️ Streaming generation produced no audio."
+            yield None, "⚠️ Streaming generation produced no audio."
+            return
         wav = np.concatenate(chunks)
 
         output_path = _write_wav(wav)
 
-        return output_path, f"✅ Generated (streaming)! Sample rate: {model.tts_model.sample_rate}Hz"
+        yield output_path, f"✅ Generated (streaming)! Sample rate: {sample_rate}Hz"
 
     except Exception as e:
         error_msg = f"❌ Error: {str(e)}"
         print(error_msg)
-        return None, error_msg
+        yield None, error_msg
 
 
 def on_ultimate_toggle(checked):

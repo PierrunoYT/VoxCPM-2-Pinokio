@@ -7,7 +7,7 @@ A Pinokio 1-click launcher for **VoxCPM 2** — a tokenizer-free Text-to-Speech 
 - **Voice Design** — Describe the voice you want with a text instruction (no reference audio needed)
 - **Controllable Cloning** — Clone a voice with an optional style/control instruction
 - **Ultimate Cloning** — Auto-transcribes reference audio via SenseVoice ASR for maximum vocal fidelity
-- **Streaming Mode** — Chunked generation for faster time-to-first-audio
+- **Streaming Mode** — Chunked generation with live progress in the status box (the audio player fills in once the clip is complete)
 - **Reference audio enhancement** — Optional ZipEnhancer denoising before cloning
 - **Text normalization** — Normalize numbers, dates, and abbreviations
 
