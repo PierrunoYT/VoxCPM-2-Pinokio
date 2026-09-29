@@ -30,13 +30,15 @@ module.exports = {
       },
       "next": null
     },
-    // amd windows
+    // amd windows: voxcpm needs torch>=2.5, but torch-directml is stuck on
+    // torch 2.4.1 (and app.py never selects a DirectML device anyway), so use
+    // the CPU build like the fallback below.
     {
       "when": "{{gpu === 'amd' && platform === 'win32'}}",
       "method": "shell.run",
       "params": {
         "venv": "{{args && args.venv ? args.venv : null}}",
-        "message": "uv pip install torch==2.4.1 torch-directml==0.2.5.dev240914 torchaudio==2.4.1 torchvision==0.19.1 numpy==1.26.4 --force-reinstall"
+        "message": "uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cpu --force-reinstall --no-deps"
       },
       "next": null
     },
