@@ -17,11 +17,31 @@ import numpy as np
 from voxcpm import VoxCPM
 from funasr import AutoModel
 import tempfile
+import time
 
 # Generated audio is written here so the files are grouped and easy to clean up,
 # rather than being scattered through the system temp root.
 _OUTPUT_DIR = os.path.join(tempfile.gettempdir(), "voxcpm2_outputs")
 os.makedirs(_OUTPUT_DIR, exist_ok=True)
+
+# Nothing else ever deletes these, so drop outputs left over from earlier
+# sessions. Gradio copies results into its own cache before serving them, and
+# the age cutoff leaves files from a concurrently running instance alone.
+_OUTPUT_MAX_AGE_S = 24 * 60 * 60
+
+
+def _purge_old_outputs():
+    cutoff = time.time() - _OUTPUT_MAX_AGE_S
+    for name in os.listdir(_OUTPUT_DIR):
+        path = os.path.join(_OUTPUT_DIR, name)
+        try:
+            if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
+                os.remove(path)
+        except OSError:
+            pass
+
+
+_purge_old_outputs()
 
 # Global models
 model = None
