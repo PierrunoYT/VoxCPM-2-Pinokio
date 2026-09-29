@@ -281,9 +281,12 @@ def generate_streaming_speech(
 def on_ultimate_toggle(checked):
     """Toggle UI when ultimate cloning mode changes"""
     if checked:
+        # Only lock the control instruction; _build_generation_kwargs already
+        # ignores it in this mode, and keeping the text means toggling back
+        # off doesn't lose what the user typed.
         return (
             gr.update(visible=True),
-            gr.update(interactive=False, value=""),
+            gr.update(interactive=False),
         )
     return (
         gr.update(visible=False),
