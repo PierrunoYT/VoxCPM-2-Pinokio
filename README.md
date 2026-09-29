@@ -14,6 +14,7 @@ A Pinokio 1-click launcher for **VoxCPM 2** — a tokenizer-free Text-to-Speech 
 ## Requirements
 
 - **GPU**: NVIDIA GPU recommended (~8GB VRAM); Apple Silicon and CPU fallback supported
+- **Not supported**: Intel Macs — VoxCPM 2 needs PyTorch ≥ 2.5, and PyTorch no longer ships x86_64 macOS builds past 2.2.2
 - **Storage**: ~10GB for models
 
 ## Installation

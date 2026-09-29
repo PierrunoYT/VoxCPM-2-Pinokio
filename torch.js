@@ -62,13 +62,14 @@ module.exports = {
       },
       "next": null
     },
-    // intel mac
+    // intel mac: PyTorch stopped publishing x86_64 macOS wheels at 2.2.2, but
+    // voxcpm requires torch>=2.5, so there is no build that can run it here.
+    // Don't downgrade torch below voxcpm's minimum -- just say why.
     {
       "when": "{{platform === 'darwin' && arch !== 'arm64'}}",
       "method": "shell.run",
       "params": {
-        "venv": "{{args && args.venv ? args.venv : null}}",
-        "message": "uv pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cpu --force-reinstall --no-deps"
+        "message": "echo \"VoxCPM 2 requires torch>=2.5, which is not available for Intel Macs. Apple Silicon, NVIDIA/AMD Linux, or Windows is required.\""
       },
       "next": null
     },
