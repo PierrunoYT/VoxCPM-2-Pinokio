@@ -303,11 +303,8 @@ _CUSTOM_CSS = """
 }
 """
 
-with gr.Blocks(
-    title="VoxCPM 2 - Text-to-Speech",
-    theme=_APP_THEME,
-    css=_CUSTOM_CSS,
-) as demo:
+# Gradio 6 takes theme/css in launch(); passing them to Blocks is deprecated.
+with gr.Blocks(title="VoxCPM 2 - Text-to-Speech") as demo:
     gr.Markdown("""
     # 🎙️ VoxCPM 2 - Tokenizer-Free TTS
     
@@ -492,4 +489,6 @@ if __name__ == "__main__":
         share=False,
         show_error=True,
         favicon_path=_favicon,
+        theme=_APP_THEME,
+        css=_CUSTOM_CSS,
     )

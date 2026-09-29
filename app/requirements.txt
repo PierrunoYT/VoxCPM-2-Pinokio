@@ -1,5 +1,5 @@
 voxcpm
-gradio>=4.0.0
+gradio>=6,<7
 soundfile
 numpy
 modelscope

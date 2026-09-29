@@ -65,10 +65,9 @@ Two endpoints are exposed:
 - `generate` — standard generation
 - `generate_streaming` — streaming generation
 
-Gradio 5 serves these under `/gradio_api/call/<api_name>` as a two-step call:
-`POST` the arguments to get an `event_id`, then `GET` the same path plus
-`/<event_id>` to stream the result. On Gradio 4 drop the `/gradio_api` prefix
-(`/call/<api_name>`). The old Gradio 3 `/run/<api_name>` route no longer exists.
+Gradio (6.x, as required by `voxcpm`) serves these under
+`/gradio_api/call/<api_name>` as a two-step call: `POST` the arguments to get an
+`event_id`, then `GET` the same path plus `/<event_id>` to stream the result.
 
 ### Python (Gradio client)
 
