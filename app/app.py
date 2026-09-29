@@ -100,7 +100,10 @@ def transcribe_audio(checked, audio_path):
     if audio_path is None:
         return gr.update(value="")
     if asr_model is None:
-        return gr.update(value="⚠️ ASR model not loaded.")
+        # Don't put the warning in the textbox: its contents are sent to the
+        # model as the reference transcript.
+        gr.Warning("ASR model not loaded -- type the transcript manually.")
+        return gr.update(value="")
     try:
         print("Running ASR on reference audio...")
         res = asr_model.generate(input=audio_path, language="auto", use_itn=True)
