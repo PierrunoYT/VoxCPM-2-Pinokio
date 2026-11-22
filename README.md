@@ -45,7 +45,7 @@ Upload a reference audio clip. Optionally add a Control Instruction to steer sty
 
 ### Ultimate Cloning
 
-Upload a reference audio clip and toggle **Ultimate Cloning Mode**. The SenseVoice ASR model auto-transcribes the reference audio. The model continues from the reference for maximum fidelity. Note: a brief artifact may appear at the start of the output due to the continuation approach.
+Upload a reference audio clip and toggle **Ultimate Cloning Mode**. The SenseVoice ASR model auto-transcribes the reference audio (the transcript stays editable). The model continues from the reference for maximum fidelity. If the transcript is still empty when you click Generate, the reference is transcribed then; generation stops with a warning if there is no reference audio or no transcript can be produced, rather than falling back to another mode. Note: a brief artifact may appear at the start of the output due to the continuation approach.
 
 ### Advanced Settings
 

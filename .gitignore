@@ -100,3 +100,15 @@ desktop.ini
 # Test files
 test_output/
 test_audio/
+node_modules/
+runs/
+.open-edit/
+.open-edit-prefs.json
+
+# Local agent / editor tooling
+package.json
+package-lock.json
+.agents/
+.claude/
+.codex/
+.gemini/

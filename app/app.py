@@ -1,4 +1,5 @@
 import os
+import re
 
 # Disable torch.compile completely to avoid Dynamo errors on Windows
 os.environ['TORCH_COMPILE_DISABLE'] = '1'
@@ -59,17 +60,24 @@ def _pick_device():
 def load_models():
     global model, asr_model
     print("Loading VoxCPM2...")
-    model = VoxCPM.from_pretrained("openbmb/VoxCPM2", optimize=True)
+    # torch.compile is disabled globally (see top of file), so optimize=True
+    # would only add a pointless warm-up generation at startup.
+    model = VoxCPM.from_pretrained("openbmb/VoxCPM2", optimize=False)
     print(f"VoxCPM2 loaded! Sample rate: {model.tts_model.sample_rate}Hz")
 
+    # ASR only auto-fills the Ultimate Cloning transcript, so a failure here
+    # must not take the whole app down -- users can still type it manually.
     print("Loading SenseVoice ASR model...")
-    device = _pick_device()
-    asr_model = AutoModel(
-        model="iic/SenseVoiceSmall",
-        disable_update=True,
-        device=device,
-    )
-    print("SenseVoice loaded!")
+    try:
+        asr_model = AutoModel(
+            model="iic/SenseVoiceSmall",
+            disable_update=True,
+            device=_pick_device(),
+        )
+        print("SenseVoice loaded!")
+    except Exception as e:
+        asr_model = None
+        print(f"SenseVoice failed to load, auto-transcription disabled: {e}")
 
 def _to_numpy(wav):
     """Model outputs may be torch tensors; soundfile needs numpy."""
@@ -91,6 +99,28 @@ def _write_wav(wav):
     return output_path
 
 
+# SenseVoice prefixes its output with tags such as <|en|><|NEUTRAL|><|Speech|>.
+_SENSEVOICE_TAG = re.compile(r"<\|[^|]*\|>")
+
+
+def _transcribe(audio_path):
+    """Return SenseVoice's transcript of audio_path, or "" if none is available."""
+    if asr_model is None:
+        return ""
+    try:
+        print("Running ASR on reference audio...")
+        res = asr_model.generate(input=audio_path, language="auto", use_itn=True)
+    except Exception as e:
+        print(f"ASR error: {e}")
+        return ""
+    text = _SENSEVOICE_TAG.sub("", res[0].get("text") or "").strip() if res else ""
+    if not text:
+        print("ASR returned no text.")
+        return ""
+    print(f"ASR result: {text[:60]}...")
+    return text
+
+
 def transcribe_audio(checked, audio_path):
     """Auto-transcribe reference audio using SenseVoice (only when ultimate cloning is ON)"""
     if not checked:
@@ -104,18 +134,7 @@ def transcribe_audio(checked, audio_path):
         # model as the reference transcript.
         gr.Warning("ASR model not loaded -- type the transcript manually.")
         return gr.update(value="")
-    try:
-        print("Running ASR on reference audio...")
-        res = asr_model.generate(input=audio_path, language="auto", use_itn=True)
-        if not res or not res[0].get("text"):
-            print("ASR returned no text.")
-            return gr.update(value="")
-        text = res[0]["text"].split("|>")[-1]
-        print(f"ASR result: {text[:60]}...")
-        return gr.update(value=text)
-    except Exception as e:
-        print(f"ASR error: {e}")
-        return gr.update(value="")
+    return gr.update(value=_transcribe(audio_path))
 
 
 def _build_generation_kwargs(
@@ -131,37 +150,49 @@ def _build_generation_kwargs(
 ):
     """Assemble the kwargs shared by both the standard and streaming paths.
 
-    Returns (kwargs, reference_wav_path, prompt_text_clean, control).
+    Returns (kwargs, mode). Raises ValueError with a user-facing message when
+    Ultimate Cloning can't run, rather than silently falling back to a
+    different mode.
     """
     text = text.strip()
     control = (control_instruction or "").strip()
-    reference_wav_path = reference_audio if reference_audio is not None else None
-    prompt_text_clean = prompt_text.strip() if prompt_text and prompt_text.strip() else None
-
-    # In ultimate cloning mode, control instruction is disabled
-    if use_ultimate_cloning:
-        control = ""
-
-    # Prepend control instruction in parentheses (for voice design / controllable cloning)
-    final_text = f"({control}){text}" if control else text
 
     kwargs = dict(
-        text=final_text,
         cfg_value=float(cfg_value),
         inference_timesteps=int(inference_timesteps),
         normalize=normalize,
         denoise=denoise,
     )
 
-    if reference_wav_path:
-        kwargs["reference_wav_path"] = reference_wav_path
+    if use_ultimate_cloning:
+        if reference_audio is None:
+            raise ValueError("Ultimate Cloning needs reference audio.")
+        transcript = (prompt_text or "").strip()
+        if not transcript:
+            # The auto-transcription may not have finished when this request
+            # was submitted, or it failed -- transcribe now.
+            transcript = _transcribe(reference_audio)
+        if not transcript:
+            raise ValueError(
+                "Ultimate Cloning needs a transcript of the reference audio, "
+                "and ASR produced none -- type it manually."
+            )
+        # The control instruction is ignored in this mode; the reference is
+        # passed as both the continuation prompt and the cloning reference.
+        kwargs.update(
+            text=text,
+            reference_wav_path=reference_audio,
+            prompt_wav_path=reference_audio,
+            prompt_text=transcript,
+        )
+        return kwargs, "ultimate cloning"
 
-    # Ultimate cloning: pass reference as both prompt and reference
-    if use_ultimate_cloning and reference_wav_path and prompt_text_clean:
-        kwargs["prompt_wav_path"] = reference_wav_path
-        kwargs["prompt_text"] = prompt_text_clean
-
-    return kwargs, reference_wav_path, prompt_text_clean, control
+    # Prepend control instruction in parentheses (for voice design / controllable cloning)
+    kwargs["text"] = f"({control}){text}" if control else text
+    if reference_audio is not None:
+        kwargs["reference_wav_path"] = reference_audio
+        return kwargs, "controllable cloning"
+    return kwargs, "voice design" if control else "basic"
 
 
 def _validate_request(text):
@@ -190,7 +221,7 @@ def generate_speech(
         return None, error
 
     try:
-        kwargs, reference_wav_path, prompt_text_clean, control = _build_generation_kwargs(
+        kwargs, mode = _build_generation_kwargs(
             text,
             control_instruction,
             reference_audio,
@@ -201,18 +232,12 @@ def generate_speech(
             normalize,
             denoise,
         )
+    except ValueError as e:
+        return None, f"⚠️ {e}"
 
+    try:
         wav = model.generate(**kwargs)
         output_path = _write_wav(wav)
-
-        if use_ultimate_cloning and prompt_text_clean:
-            mode = "ultimate cloning"
-        elif reference_wav_path:
-            mode = "controllable cloning"
-        elif control:
-            mode = "voice design"
-        else:
-            mode = "basic"
         return output_path, f"✅ Generated ({mode})! Sample rate: {model.tts_model.sample_rate}Hz"
 
     except Exception as e:
@@ -243,7 +268,7 @@ def generate_streaming_speech(
         return
 
     try:
-        kwargs, _, _, _ = _build_generation_kwargs(
+        kwargs, mode = _build_generation_kwargs(
             text,
             control_instruction,
             reference_audio,
@@ -254,7 +279,11 @@ def generate_streaming_speech(
             normalize,
             denoise,
         )
+    except ValueError as e:
+        yield None, f"⚠️ {e}"
+        return
 
+    try:
         sample_rate = model.tts_model.sample_rate
         chunks = []
         samples = 0
@@ -270,7 +299,7 @@ def generate_streaming_speech(
 
         output_path = _write_wav(wav)
 
-        yield output_path, f"✅ Generated (streaming)! Sample rate: {sample_rate}Hz"
+        yield output_path, f"✅ Generated ({mode}, streaming)! Sample rate: {sample_rate}Hz"
 
     except Exception as e:
         error_msg = f"❌ Error: {str(e)}"
@@ -375,7 +404,6 @@ with gr.Blocks(title="VoxCPM 2 - Text-to-Speech") as demo:
                 "⚠️ **Note:** Ultimate Cloning works by continuing from the reference audio. "
                 "This may produce a brief artifact at the start of the output. "
                 "For clean results, use **Controllable Cloning** instead (reference audio + Control Instruction, without Ultimate Cloning).",
-                visible=True,
             )
 
             # Prompt text (auto-transcribed, shown only in ultimate mode)

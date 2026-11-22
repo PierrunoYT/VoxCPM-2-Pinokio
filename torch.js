@@ -1,3 +1,13 @@
+// Each torch install is guarded by a version check, so update.js (which runs
+// this every time) only re-downloads the multi-GB stack when the installed
+// build isn't the one this platform needs.
+//
+// torchcodec (a voxcpm dependency) is built against one specific torch
+// release, so the latest PyPI version doesn't load with torch 2.7. Pin the
+// matching 0.4.0 where it's published; it has no Windows build, and nothing
+// here uses it (torchaudio 2.7 doesn't decode through it), so Windows drops it.
+const torchCheck = (version) => `python -c "import sys, torch; sys.exit(torch.__version__ != '${version}')" ||`
+
 module.exports = {
   run: [
     // nvidia windows
@@ -7,7 +17,8 @@ module.exports = {
       "params": {
         "venv": "{{args && args.venv ? args.venv : null}}",
         "message": [
-          "uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 {{args && args.xformers ? 'xformers==0.0.30' : ''}} --index-url https://download.pytorch.org/whl/cu128 --force-reinstall --no-deps",
+          `${torchCheck("2.7.0+cu128")} uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 {{args && args.xformers ? 'xformers==0.0.30' : ''}} --index-url https://download.pytorch.org/whl/cu128 --force-reinstall --no-deps`,
+          "uv pip uninstall torchcodec",
           "{{args && args.triton ? 'uv pip install triton-windows==3.3.1.post19' : ''}}",
           "{{args && args.sageattention ? 'uv pip install https://huggingface.co/cocktailpeanut/wheels/resolve/main/sageattention-2.1.1%2Bcu128torch2.7.1-cp310-cp310-win_amd64.whl' : ''}}",
           "{{args && args.flashattention ? 'uv pip install https://huggingface.co/cocktailpeanut/wheels/resolve/main/flash_attn-2.8.2%2Bcu128torch2.7-cp310-cp310-win_amd64.whl' : ''}}"
@@ -22,7 +33,8 @@ module.exports = {
       "params": {
         "venv": "{{args && args.venv ? args.venv : null}}",
         "message": [
-          "uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 {{args && args.xformers ? 'xformers==0.0.30' : ''}} --index-url https://download.pytorch.org/whl/cu128 --force-reinstall",
+          `${torchCheck("2.7.0+cu128")} uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 {{args && args.xformers ? 'xformers==0.0.30' : ''}} --index-url https://download.pytorch.org/whl/cu128 --force-reinstall`,
+          "uv pip install torchcodec==0.4.0 --index-url https://download.pytorch.org/whl/cu128",
           "{{args && args.triton ? 'uv pip install triton' : ''}}",
           "{{args && args.sageattention ? 'uv pip install https://huggingface.co/cocktailpeanut/wheels/resolve/main/sageattention-2.1.1%2Bcu128torch2.7.1-cp310-cp310-linux_x86_64.whl' : ''}}",
           "{{args && args.flashattention ? 'uv pip install https://huggingface.co/cocktailpeanut/wheels/resolve/main/flash_attn-2.8.3%2Bcu128torch2.7-cp310-cp310-linux_x86_64.whl' : ''}}"
@@ -38,7 +50,10 @@ module.exports = {
       "method": "shell.run",
       "params": {
         "venv": "{{args && args.venv ? args.venv : null}}",
-        "message": "uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cpu --force-reinstall --no-deps"
+        "message": [
+          `${torchCheck("2.7.0+cpu")} uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cpu --force-reinstall --no-deps`,
+          "uv pip uninstall torchcodec"
+        ]
       },
       "next": null
     },
@@ -48,7 +63,10 @@ module.exports = {
       "method": "shell.run",
       "params": {
         "venv": "{{args && args.venv ? args.venv : null}}",
-        "message": "uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/rocm6.3 --force-reinstall --no-deps"
+        "message": [
+          `${torchCheck("2.7.0+rocm6.3")} uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/rocm6.3 --force-reinstall --no-deps`,
+          "uv pip install torchcodec==0.4.0"
+        ]
       },
       "next": null
     },
@@ -58,7 +76,10 @@ module.exports = {
       "method": "shell.run",
       "params": {
         "venv": "{{args && args.venv ? args.venv : null}}",
-        "message": "uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cpu --force-reinstall --no-deps"
+        "message": [
+          `${torchCheck("2.7.0")} uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cpu --force-reinstall --no-deps`,
+          "uv pip install torchcodec==0.4.0"
+        ]
       },
       "next": null
     },
@@ -78,7 +99,10 @@ module.exports = {
       "method": "shell.run",
       "params": {
         "venv": "{{args && args.venv ? args.venv : null}}",
-        "message": "uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cpu --force-reinstall --no-deps"
+        "message": [
+          `${torchCheck("2.7.0+cpu")} uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cpu --force-reinstall --no-deps`,
+          "{{platform === 'win32' ? 'uv pip uninstall torchcodec' : 'uv pip install torchcodec==0.4.0'}}"
+        ]
       }
     }
   ]

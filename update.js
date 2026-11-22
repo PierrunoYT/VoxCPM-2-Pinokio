@@ -11,8 +11,10 @@ module.exports = {
     method: "shell.run",
     params: {
       venv: "env",
+      // Upgrade the app's own packages but leave torch alone: a blanket -U
+      // would pull the latest PyPI torch over the build torch.js installs.
       message: [
-        "uv pip install -r app/requirements.txt"
+        "uv pip install -r app/requirements.txt --upgrade-package voxcpm --upgrade-package gradio --upgrade-package funasr --upgrade-package modelscope --upgrade-package huggingface_hub"
       ],
     }
   }, {
@@ -20,8 +22,7 @@ module.exports = {
     params: {
       uri: "torch.js",
       params: {
-        venv: "env",
-        triton: true,
+        venv: "env"
       }
     }
   }, {
