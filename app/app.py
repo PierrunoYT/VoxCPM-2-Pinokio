@@ -537,20 +537,10 @@ with gr.Blocks(title="VoxCPM 2 - Text-to-Speech") as demo:
 if __name__ == "__main__":
     load_models()
 
-    _here = os.path.dirname(os.path.abspath(__file__))
-    _root = os.path.dirname(_here)
-    _favicon = None
-    for _candidate in (
-        os.path.join(_here, "icon.png"),
-        os.path.join(_here, "icon.jpeg"),
-        os.path.join(_here, "icon.jpg"),
-        os.path.join(_root, "icon.jpeg"),
-        os.path.join(_root, "icon.jpg"),
-        os.path.join(_root, "icon.png"),
-    ):
-        if os.path.isfile(_candidate):
-            _favicon = _candidate
-            break
+    # The launcher's icon.png sits in the repo root, one level above app/.
+    _favicon = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "icon.png")
+    if not os.path.isfile(_favicon):
+        _favicon = None
     demo.queue(max_size=10, default_concurrency_limit=1).launch(
         server_name="127.0.0.1",
         share=False,
